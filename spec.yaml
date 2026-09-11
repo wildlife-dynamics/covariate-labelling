@@ -1,12 +1,509 @@
-id:  # Unique workflow identifier (kebab-case)
-requirements: # Package dependencies with channels
-  - name: ecoscope-workflows-core
-    version: "0.18.0"
-    channel: https://repo.prefix.dev/ecoscope-workflows/
+id: subject_trajectory_export
+requirements:
+- name: ecoscope-platform
+  version: 2.16.1
+  channel: https://repo.prefix.dev/ecoscope-workflows/
+  # ecoscope-platform already declares this exact pydeck dependency. it is
+  # re-stated here as a workaround for a known issue. for further detail, see:
+  # https://github.com/wildlife-dynamics/wt/issues/167#issuecomment-4451993697
+- name: pydeck
+  version: 0.9.2
+  channel: conda-forge
 
-# List of tasks in execution order
+- name: subject-trajectory-export-tasks
+  path: /Users/la/pgaff/bull_movement/subject-trajectory-export
+  editable: true
+
+#- name: subject-trajectory-export-tasks
+ # version: 0.1.0.*
+  #channel: https://repo.prefix.dev/ecoscope-workflows-custom/
+rjsf-overrides:
+  properties:
+    Subject Group.properties.subject_obs.properties.subject_group_name.ecoscope:transform:
+    - transformer: EarthRangerEnumResolver
+      transformer_kws:
+        type: subject_group_name
+        depends_on: properties.er_client_name.properties.data_source.properties.name
+    groupers.properties.groupers.ecoscope:transform:
+    - transformer: EarthRangerEnumResolver
+      transformer_kws:
+        type: spatial_feature_group
+        depends_on: properties.er_client_name.properties.data_source.properties.name
+  $defs:
+    ValueGrouper.properties.index_name.oneOf:
+    - const: subject_name
+      title: Subject Name
+    - const: subject_subtype
+      title: Subject Subtype
+    - const: subject_sex
+      title: Subject Sex
+  uiSchema:
+    groupers.groupers.items.anyOf:
+    - ui:options:
+        label: false
+    - ui:options:
+        label: false
+    - ui:options:
+        label: false
+task-instance-defaults:
+  skipif:
+    conditions:
+    - any_is_empty_df
+    - any_dependency_skipped
 workflow:
-  - name:  # Display name used for the configuration form UI
-    description:  # Description used for the configuration form
-    id:  # Unique task identifier (snake_case)
-    task:  # Function name from task library
+- name: Workflow Details
+  id: workflow_details
+  task: set_workflow_details
+- name: Data Source
+  id: er_client_name
+  task: set_er_connection
+- name: Time Range
+  id: time_range
+  task: set_time_range
+  partial:
+    time_format: '%d %b %Y %H:%M:%S'
+- name: Extract Timezone Selection
+  id: get_timezone
+  task: get_timezone_from_time_range
+  partial:
+    time_range: ${{ workflow.time_range.return }}
+- title: Subject Group
+  type: task-group
+  description: Choose a subject group to analyze
+  tasks:
+  - name:
+    id: subject_obs
+    task: get_subjectgroup_observations
+    partial:
+      client: ${{ workflow.er_client_name.return }}
+      time_range: ${{ workflow.time_range.return }}
+      raise_on_empty: false
+      include_details: false
+      include_subjectsource_details: false
+      filter: clean
+- name: Warn if mixed subtype
+  id: warn_if_mixed_subtype
+  task: mixed_subtype_warning
+  skipif:
+    conditions:
+    - never
+  partial:
+    subject_obs: ${{ workflow.subject_obs.return }}
+- name: Convert to timezone
+  id: convert_to_user_timezone
+  task: convert_values_to_timezone
+  partial:
+    df: ${{ workflow.subject_obs.return }}
+    timezone: ${{ workflow.get_timezone.return }}
+    columns:
+    - fixtime
+- name: Group Data
+  id: groupers
+  task: set_groupers
+- task: extract_spatial_grouper_feature_group_names
+  id: spatial_group_ids
+  partial:
+    groupers: ${{ workflow.groupers.return }}
+- task: get_spatial_features_group
+  id: fetch_all_spatial_feature_groups
+  partial:
+    client: ${{ workflow.er_client_name.return }}
+  map:
+    argnames: spatial_features_group_name
+    argvalues: ${{ workflow.spatial_group_ids.return }}
+- task: resolve_spatial_feature_groups_for_spatial_groupers
+  id: resolved_groupers
+  skipif:
+    conditions:
+    - never
+  partial:
+    groupers: ${{ workflow.groupers.return }}
+    spatial_feature_groups: ${{ workflow.fetch_all_spatial_feature_groups.return }}
+- name: Transform Observations to Relocations
+  id: subject_reloc
+  task: process_relocations
+  partial:
+    observations: ${{ workflow.convert_to_user_timezone.return }}
+    relocs_columns:
+    - groupby_col
+    - fixtime
+    - junk_status
+    - geometry
+    - extra__subject__name
+    - extra__subject__subject_subtype
+    - extra__subject__sex
+    filter_point_coords:
+    - x: 180.000000
+      y: 90.000000
+    - x: 0.000000
+      y: 0.000000
+    - x: 1.000000
+      y: 1.000000
+- name: Apply Day/Night Labels to Relocations
+  id: day_night_labels
+  task: classify_is_night
+  partial:
+    relocations: ${{ workflow.subject_reloc.return }}
+- name: Trajectory Segment Filter
+  id: subject_traj
+  task: relocations_to_trajectory
+  partial:
+    relocations: ${{ workflow.day_night_labels.return }}
+- name: Add temporal index to Subject Trajectories
+  id: traj_add_temporal_index
+  task: add_temporal_index
+  partial:
+    df: ${{ workflow.subject_traj.return }}
+    time_col: segment_start
+    groupers: ${{ workflow.resolved_groupers.return }}
+    cast_to_datetime: true
+    format: mixed
+- name: Add spatial index to Subject Trajectories
+  id: traj_add_spatial_index
+  task: add_spatial_index
+  partial:
+    gdf: ${{ workflow.traj_add_temporal_index.return }}
+    groupers: ${{ workflow.resolved_groupers.return }}
+- name: Rename value grouper columns
+  id: rename_grouper_columns
+  task: map_columns
+  partial:
+    df: ${{ workflow.traj_add_spatial_index.return }}
+    drop_columns: []
+    retain_columns: []
+    rename_columns:
+      extra__name: subject_name
+      extra__subject_subtype: subject_subtype
+      extra__sex: subject_sex
+    raise_if_not_found: true
+- name: Map Subject Sex Values
+  id: map_subject_sex
+  task: map_values
+  partial:
+    df: ${{ workflow.rename_grouper_columns.return }}
+    column_name: subject_sex
+    value_map:
+      male: male
+      female: female
+    missing_values: replace
+    replacement: unknown
+- name: Persist full trajectory table (parquet, with geometry)
+  id: persist_traj_parquet
+  task: persist_df
+  partial:
+    df: ${{ workflow.map_subject_sex.return }}
+    root_path: ${{ env.ECOSCOPE_WORKFLOWS_RESULTS }}
+    filename: trajectories
+    filetype: parquet
+- name: Drop geometry so the export is a clean tabular CSV
+  id: export_table_cols
+  task: map_columns
+  partial:
+    df: ${{ workflow.map_subject_sex.return }}
+    drop_columns:
+    - geometry
+    retain_columns: []
+    rename_columns: {}
+    raise_if_not_found: false
+- name: Persist trajectory stats table (CSV, for R)
+  id: persist_traj_csv
+  task: persist_df
+  partial:
+    df: ${{ workflow.export_table_cols.return }}
+    root_path: ${{ env.ECOSCOPE_WORKFLOWS_RESULTS }}
+    filename: trajectory_stats
+    filetype: csv
+- name: Set NSD Chart Title
+  id: set_nsd_chart_title
+  task: set_string_var
+  partial:
+    var: Net Square Displacement
+- name: Split Subject Trajectories by Group
+  id: split_subject_traj_groups
+  task: split_groups
+  partial:
+    df: ${{ workflow.map_subject_sex.return }}
+    groupers: ${{ workflow.resolved_groupers.return }}
+- name: Calculate Mean Speed Per Group
+  id: mean_speed
+  task: dataframe_column_mean
+  partial:
+    column_name: speed_kmhr
+  mapvalues:
+    argnames: df
+    argvalues: ${{ workflow.split_subject_traj_groups.return }}
+- name: Convert Average Speed units
+  id: average_speed_converted
+  task: with_unit
+  partial:
+    original_unit: km/h
+    new_unit: km/h
+  mapvalues:
+    argnames: value
+    argvalues: ${{ workflow.mean_speed.return }}
+- name: Create Single Value Widgets for Mean Speed Per Group
+  id: mean_speed_sv_widgets
+  task: create_single_value_widget_single_view
+  skipif:
+    conditions:
+    - never
+  partial:
+    title: Mean Speed
+    decimal_places: 1
+  map:
+    argnames:
+    - view
+    - data
+    argvalues: ${{ workflow.average_speed_converted.return }}
+- name: Merge per group Mean Speed SV widgets
+  id: mean_speed_grouped_sv_widget
+  task: merge_widget_views
+  partial:
+    widgets: ${{ workflow.mean_speed_sv_widgets.return }}
+- name: Calculate Max Speed Per Group
+  id: max_speed
+  task: dataframe_column_max
+  partial:
+    column_name: speed_kmhr
+  mapvalues:
+    argnames: df
+    argvalues: ${{ workflow.split_subject_traj_groups.return }}
+- name: Convert Max Speed units
+  id: max_speed_converted
+  task: with_unit
+  partial:
+    original_unit: km/h
+    new_unit: km/h
+  mapvalues:
+    argnames: value
+    argvalues: ${{ workflow.max_speed.return }}
+- name: Create Single Value Widgets for Max Speed Per Group
+  id: max_speed_sv_widgets
+  task: create_single_value_widget_single_view
+  skipif:
+    conditions:
+    - never
+  partial:
+    title: Max Speed
+    decimal_places: 1
+  map:
+    argnames:
+    - view
+    - data
+    argvalues: ${{ workflow.max_speed_converted.return }}
+- name: Merge per group Max Speed SV widgets
+  id: max_speed_grouped_sv_widget
+  task: merge_widget_views
+  partial:
+    widgets: ${{ workflow.max_speed_sv_widgets.return }}
+- name: Calculate Number of Locations Per Group
+  id: num_location
+  task: dataframe_count
+  mapvalues:
+    argnames: df
+    argvalues: ${{ workflow.split_subject_traj_groups.return }}
+- name: Create Single Value Widgets for Number of Location Per Group
+  id: num_location_sv_widgets
+  task: create_single_value_widget_single_view
+  skipif:
+    conditions:
+    - never
+  partial:
+    title: Number of Locations
+    decimal_places: 1
+  map:
+    argnames:
+    - view
+    - data
+    argvalues: ${{ workflow.num_location.return }}
+- name: Merge per group Number of Locations SV widgets
+  id: num_location_grouped_sv_widget
+  task: merge_widget_views
+  partial:
+    widgets: ${{ workflow.num_location_sv_widgets.return }}
+- name: Calculate Day/Night Ratio Per Group
+  id: nightday_ratio
+  task: get_night_day_ratio
+  mapvalues:
+    argnames: df
+    argvalues: ${{ workflow.split_subject_traj_groups.return }}
+- name: Create Single Value Widgets for Day/Night Ratio Per Group
+  id: nightday_ratio_sv_widgets
+  task: create_single_value_widget_single_view
+  skipif:
+    conditions:
+    - never
+  partial:
+    title: Night/Day Ratio
+    decimal_places: 1
+  map:
+    argnames:
+    - view
+    - data
+    argvalues: ${{ workflow.nightday_ratio.return }}
+- name: Merge per group Day/Night Ratio SV widgets
+  id: nightday_ratio_grouped_sv_widget
+  task: merge_widget_views
+  partial:
+    widgets: ${{ workflow.nightday_ratio_sv_widgets.return }}
+- name: Calculate Total Distance Per Group
+  id: total_distance
+  task: dataframe_column_sum
+  partial:
+    column_name: dist_meters
+  mapvalues:
+    argnames: df
+    argvalues: ${{ workflow.split_subject_traj_groups.return }}
+- name: Convert total distance units
+  id: total_dist_converted
+  task: with_unit
+  partial:
+    original_unit: m
+    new_unit: km
+  mapvalues:
+    argnames: value
+    argvalues: ${{ workflow.total_distance.return }}
+- name: Create Single Value Widgets for Total Distance Per Group
+  id: total_distance_sv_widgets
+  task: create_single_value_widget_single_view
+  skipif:
+    conditions:
+    - never
+  partial:
+    title: Total Distance
+    decimal_places: 1
+  map:
+    argnames:
+    - view
+    - data
+    argvalues: ${{ workflow.total_dist_converted.return }}
+- name: Merge per group Total Distance SV widgets
+  id: total_dist_grouped_sv_widget
+  task: merge_widget_views
+  partial:
+    widgets: ${{ workflow.total_distance_sv_widgets.return }}
+- name: Calculate Total Time Per Group
+  id: total_time
+  task: dataframe_column_sum
+  partial:
+    column_name: timespan_seconds
+  mapvalues:
+    argnames: df
+    argvalues: ${{ workflow.split_subject_traj_groups.return }}
+- name: Convert total time units
+  id: total_time_converted
+  task: with_unit
+  partial:
+    original_unit: s
+    new_unit: h
+  mapvalues:
+    argnames: value
+    argvalues: ${{ workflow.total_time.return }}
+- name: Create Single Value Widgets for Total Distance Per Group
+  id: total_time_sv_widgets
+  task: create_single_value_widget_single_view
+  skipif:
+    conditions:
+    - never
+  partial:
+    title: Total Time
+    decimal_places: 1
+  map:
+    argnames:
+    - view
+    - data
+    argvalues: ${{ workflow.total_time_converted.return }}
+- name: Merge per group Total Distance SV widgets
+  id: total_time_grouped_sv_widget
+  task: merge_widget_views
+  partial:
+    widgets: ${{ workflow.total_time_sv_widgets.return }}
+- name: Rename axis label for NSD plot
+  id: nsd_rename_display_columns
+  task: map_columns
+  partial:
+    drop_columns: []
+    retain_columns: []
+    rename_columns:
+      segment_start: Time
+      nsd: NSD (km²)
+    raise_if_not_found: true
+  mapvalues:
+    argnames: df
+    argvalues: ${{ workflow.split_subject_traj_groups.return }}
+- name: Draw NSD Scatter Chart
+  id: nsd_chart
+  task: draw_ecoplot
+  partial:
+    group_by: subject_name
+    ecoplot_configs:
+    - x_col: Time
+      y_col: NSD (km²)
+      plot_style:
+        xperiodalignment:
+      color_column:
+    tickformat: '%b-%Y'
+    widget_id: ${{ workflow.set_nsd_chart_title.return }}
+  mapvalues:
+    argnames: dataframe
+    argvalues: ${{ workflow.nsd_rename_display_columns.return }}
+- name: Build a per-group NSD filename
+  id: nsd_filename
+  task: group_plot_filename
+  partial:
+    column_name: subject_name
+    suffix: net_square_displacement.html
+  mapvalues:
+    argnames: df
+    argvalues: ${{ workflow.split_subject_traj_groups.return }}
+- name: Pair each NSD filename with its plot HTML
+  id: nsd_zip_filename
+  task: groupbykey
+  partial:
+    iterables:
+    - ${{ workflow.nsd_filename.return }}
+    - ${{ workflow.nsd_chart.return }}
+- name: Persist NSD Scatter Chart as Text
+  id: nsd_chart_html_url
+  task: persist_text
+  partial:
+    root_path: ${{ env.ECOSCOPE_WORKFLOWS_RESULTS }}
+  mapvalues:
+    argnames:
+    - filename
+    - text
+    argvalues: ${{ workflow.nsd_zip_filename.return }}
+- name: Create NSD Plot Widget
+  id: nsd_chart_widget
+  task: create_plot_widget_single_view
+  skipif:
+    conditions:
+    - never
+  partial:
+    title: ${{ workflow.set_nsd_chart_title.return }}
+  map:
+    argnames:
+    - view
+    - data
+    argvalues: ${{ workflow.nsd_chart_html_url.return }}
+- name: Merge NSD Widget Views
+  id: grouped_nsd_chart_widget_merge
+  task: merge_widget_views
+  partial:
+    widgets: ${{ workflow.nsd_chart_widget.return }}
+- name: Create Dashboard with Subject Tracking Widgets
+  id: subject_tracking_dashboard
+  task: gather_dashboard
+  partial:
+    details: ${{ workflow.workflow_details.return}}
+    widgets:
+    - ${{ workflow.mean_speed_grouped_sv_widget.return }}
+    - ${{ workflow.max_speed_grouped_sv_widget.return }}
+    - ${{ workflow.num_location_grouped_sv_widget.return }}
+    - ${{ workflow.nightday_ratio_grouped_sv_widget.return }}
+    - ${{ workflow.total_dist_grouped_sv_widget.return }}
+    - ${{ workflow.total_time_grouped_sv_widget.return }}
+    - ${{ workflow.grouped_nsd_chart_widget_merge.return }}
+    groupers: ${{ workflow.resolved_groupers.return }}
+    time_range: ${{ workflow.time_range.return}}
+    warning: ${{ workflow.warn_if_mixed_subtype.return}}

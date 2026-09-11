@@ -1,0 +1,129 @@
+all-grouper:
+  name: All Grouper
+  description: Trajectory export with "all" (i.e. no) grouping.
+  params:
+    workflow_details:
+      name: "Subject Trajectory Export"
+      description: "Full trajectory table (step length, speed, NSD) for download, plus NSD chart and summary tiles. No home-range/ETD."
+    er_client_name:
+      data_source:
+        name: "mep_dev"
+    groupers:
+      groupers: []
+    time_range:
+      since: "2015-01-01T00:00:00"
+      until: "2015-12-31T23:59:59"
+      timezone:
+        label: "Africa/Nairobi (UTC+03:00)"
+        tzCode: "Africa/Nairobi"
+        name: "(UTC+03:00) Nairobi"
+        utc: "+03:00"
+    subject_obs:
+      subject_group_name: "Ecoscope"
+    subject_traj:
+      trajectory_segment_filter:
+        min_length_meters: 0.001
+        max_length_meters: 10000.0
+        max_time_secs: 21600.0
+        min_time_secs: 1.0
+        max_speed_kmhr: 10.0
+        min_speed_kmhr: 0.01
+
+value-grouper:
+  name: Value Grouper
+  description: Trajectory export grouped by subject name.
+  params:
+    workflow_details:
+      name: "Subject Trajectory Export"
+      description: "Full trajectory table for download, per subject."
+    er_client_name:
+      data_source:
+        name: "mep_dev"
+    groupers:
+      groupers:
+        - index_name: "subject_name"
+    time_range:
+      since: "2017-01-01T00:00:00"
+      until: "2017-03-31T23:59:59"
+      timezone:
+        label: "UTC (UTC+00:00)"
+        tzCode: "UTC"
+        name: "(UTC+00:00) UTC"
+        utc: "+00:00"
+    subject_obs:
+      subject_group_name: "Ecoscope"
+    subject_traj:
+      trajectory_segment_filter:
+        min_length_meters: 0.001
+        max_length_meters: 10000.0
+        max_time_secs: 21600.0
+        min_time_secs: 1.0
+        max_speed_kmhr: 10.0
+        min_speed_kmhr: 0.01
+
+month-grouper:
+  name: Month Grouper
+  description: Trajectory export with monthly grouping.
+  params:
+    workflow_details:
+      name: "Subject Trajectory Export"
+      description: "Full trajectory table for download, by month."
+    er_client_name:
+      data_source:
+        name: "mep_dev"
+    groupers:
+      groupers:
+        - temporal_index: "%B"
+    time_range:
+      since: "2017-01-01T00:00:00"
+      until: "2017-03-31T23:59:59"
+      timezone:
+        label: "UTC (UTC+00:00)"
+        tzCode: "UTC"
+        name: "(UTC+00:00) UTC"
+        utc: "+00:00"
+    subject_obs:
+      subject_group_name: "Ecoscope"
+    subject_traj:
+      trajectory_segment_filter:
+        min_length_meters: 0.001
+        max_length_meters: 10000.0
+        max_time_secs: 21600.0
+        min_time_secs: 1.0
+        max_speed_kmhr: 10.0
+        min_speed_kmhr: 0.01
+
+task-instance-error:
+  name: Task Instance Error
+  description: |
+    A demonstration of configuration that would raise a task instance error.
+    Specifically, `trajectory_segment_filter.min_length_meters` configuration is invalid.
+  raises: true
+  expected_status_code: 500
+  params:
+    workflow_details:
+      name: "Subject Trajectory Export"
+      description: "Full trajectory table for download."
+    er_client_name:
+      data_source:
+        name: "mep_dev"
+    groupers:
+      groupers: []
+    time_range:
+      since: "2017-01-01T00:00:00"
+      until: "2017-03-31T23:59:59"
+      timezone:
+        label: "UTC (UTC+00:00)"
+        tzCode: "UTC"
+        name: "(UTC+00:00) UTC"
+        utc: "+00:00"
+    subject_obs:
+      subject_group_name: "Ecoscope"
+    subject_traj:
+      trajectory_segment_filter:
+        min_length_meters: 0.001
+        max_length_meters: 0.002
+        max_time_secs: 1.001
+        min_time_secs: 1.0
+        max_speed_kmhr: 0.02
+        min_speed_kmhr: 0.01
