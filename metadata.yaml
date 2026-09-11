@@ -1,21 +1,20 @@
-name:  # Title Case, e.g. "My Ecoscope Workflow Template"
+name: Subject Trajectory Export
 
 # at least one author is required
 author:
-  - name: ""
-    organization: ""
-    email: ""
+  - name: "Rodney Omukuti"
+    organization: "Wildlife Dynamics"
+    email: "rodney@wildlifedynamics.com"
 
-description: # A short description
+description: >-
+  Builds cleaned trajectories for a subject group and exports the full
+  segment-level table (step length, duration, speed, NSD) as downloadable
+  parquet and CSV for external analysis (e.g. R). Includes an NSD chart and
+  lightweight per-subject summary tiles. Omits the home-range (ETD) calculation
+  and map rendering so it runs quickly over large, multi-year datasets.
 
-# todo: add example
-theory: "" # optional
+theory: ""
 
-# todo: add example
-output_comment: "" # optional
+output_comment: ""
 
-# optional
-# example
-# citation: 
-#   - Wu, Y. et al. (2025). "Monitoring elephant spatial patterns with Ecoscope workflows."
-citation: [] 
+citation: []
