@@ -1,5 +1,5 @@
 context:
-  name: subject-trajectory-export-tasks
+  name: covariate-labeling-tasks
   version: ${{ env.get("HATCH_VCS_VERSION") }}
 
 package:
