@@ -3,23 +3,23 @@ requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
-name = "subject-trajectory-export-tasks"
+name = "covariate-labeling-tasks"
 dynamic = ["version"]
-description = "Custom tasks for the subject-trajectory-export workflow (per-group plot filenames)."
+description = "GEE covariate-labeling tasks for the covariate-labeling workflow."
 requires-python = ">=3.11"
 # ecoscope-platform and wt-registry are provided by the workflow env at runtime.
 dependencies = []
 
 # Makes @register()-decorated tasks discoverable by wt-registry by name.
 [project.entry-points."wt_registry"]
-subject_trajectory_export_tasks = "subject_trajectory_export_tasks.tasks"
+covariate_labeling_tasks = "covariate_labeling_tasks.tasks"
 
 [tool.hatch.version]
 source = "vcs"
 fallback-version = "0.0.0"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/subject_trajectory_export_tasks"]
+packages = ["src/covariate_labeling_tasks"]
 
 # ---- pixi: local dev + the compile environment (replaces the old pixi.toml) ----
 [tool.pixi.workspace]
@@ -27,7 +27,7 @@ channels = ["https://repo.prefix.dev/ecoscope-workflows/", "conda-forge"]
 platforms = ["osx-arm64", "linux-64"]
 
 [tool.pixi.pypi-dependencies]
-subject-trajectory-export-tasks = { path = ".", editable = true }
+covariate-labeling-tasks = { path = ".", editable = true }
 
 [tool.pixi.feature.compile.dependencies]
 wt-compiler = "*"

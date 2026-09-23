@@ -35,6 +35,21 @@
       "type": "object",
       "title": "Data Source"
     },
+    "gee_client_name": {
+      "additionalProperties": false,
+      "properties": {
+        "data_source": {
+          "$ref": "#/$defs/GoogleEarthEngineConnection",
+          "title": "",
+          "description": "Select one of your configured data sources."
+        }
+      },
+      "required": [
+        "data_source"
+      ],
+      "type": "object",
+      "title": "Earth Engine Connection"
+    },
     "time_range": {
       "additionalProperties": false,
       "properties": {
@@ -161,6 +176,37 @@
       "required": [],
       "type": "object",
       "title": "Trajectory Segment Filter"
+    },
+    "label_static": {
+      "additionalProperties": false,
+      "properties": {
+        "image_id": {
+          "default": "USGS/SRTMGL1_003",
+          "title": "Image Id",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "type": "object",
+      "title": "Label segments with a static image covariate (GEE)"
+    },
+    "label_covariates": {
+      "additionalProperties": false,
+      "properties": {
+        "image_collection_id": {
+          "default": "MODIS/061/MYD13A1",
+          "title": "Image Collection Id",
+          "type": "string"
+        },
+        "image_stack": {
+          "default": 0,
+          "title": "Image Stack",
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "type": "object",
+      "title": "Label trajectory segments with NDVI (GEE temporal)"
     }
   },
   "$defs": {
@@ -175,6 +221,19 @@
         "name"
       ],
       "title": "EarthRangerConnection",
+      "type": "object"
+    },
+    "GoogleEarthEngineConnection": {
+      "properties": {
+        "name": {
+          "title": "Data Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "GoogleEarthEngineConnection",
       "type": "object"
     },
     "TimezoneInfo": {
@@ -355,13 +414,30 @@
         "timezone"
       ]
     },
+    "label_covariates": {
+      "ui:order": [
+        "image_collection_id",
+        "image_stack"
+      ],
+      "image_collection_id": {
+        "ui:title": "Image collection ID (asset path)",
+        "ui:help": "Full Earth Engine ImageCollection asset ID -- a path, not a band name -- e.g. MODIS/061/MYD13A1. The NDVI band is read from it."
+      },
+      "image_stack": {
+        "ui:title": "Image stack",
+        "ui:help": "How many images to pull around each segment's closest-in-time image. 0 = only the nearest image (one value per segment); higher values use a window and can add rows."
+      }
+    },
     "ui:order": [
       "workflow_details",
       "er_client_name",
+      "gee_client_name",
       "time_range",
       "Subject Group",
       "groupers",
-      "subject_traj"
+      "subject_traj",
+      "label_static",
+      "label_covariates"
     ],
     "groupers": {
       "groupers": {
@@ -384,6 +460,12 @@
             }
           ]
         }
+      }
+    },
+    "label_static": {
+      "image_id": {
+        "ui:title": "Static image ID (asset path)",
+        "ui:help": "Full Earth Engine image asset ID -- a path, not a band name -- e.g. USGS/SRTMGL1_003. One static image is sampled per segment (elevation)."
       }
     }
   },

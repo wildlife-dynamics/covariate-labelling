@@ -1,4 +1,4 @@
-name: Subject Trajectory Export
+name: Covariate Labeling
 
 # at least one author is required
 author:
@@ -7,11 +7,9 @@ author:
     email: "rodney@wildlifedynamics.com"
 
 description: >-
-  Builds cleaned trajectories for a subject group and exports the full
-  segment-level table (step length, duration, speed, NSD) as downloadable
-  parquet and CSV for external analysis (e.g. R). Includes an NSD chart and
-  lightweight per-subject summary tiles. Omits the home-range (ETD) calculation
-  and map rendering so it runs quickly over large, multi-year datasets.
+  Builds a subject trajectory from EarthRanger and labels each segment with Google
+  Earth Engine covariates -- a static image (elevation) and a temporal image collection
+  (NDVI) -- then exports the labeled table as parquet and CSV for downstream analysis.
 
 theory: ""
 

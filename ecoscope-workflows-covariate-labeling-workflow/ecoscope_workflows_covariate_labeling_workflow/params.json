@@ -35,6 +35,21 @@
       "type": "object",
       "title": "Data Source"
     },
+    "gee_client_name": {
+      "additionalProperties": false,
+      "properties": {
+        "data_source": {
+          "$ref": "#/$defs/GoogleEarthEngineConnection",
+          "title": "",
+          "description": "Select one of your configured data sources."
+        }
+      },
+      "required": [
+        "data_source"
+      ],
+      "type": "object",
+      "title": "Earth Engine Connection"
+    },
     "time_range": {
       "additionalProperties": false,
       "properties": {
@@ -136,6 +151,37 @@
       "required": [],
       "type": "object",
       "title": "Trajectory Segment Filter"
+    },
+    "label_static": {
+      "additionalProperties": false,
+      "properties": {
+        "image_id": {
+          "default": "USGS/SRTMGL1_003",
+          "title": "Image Id",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "type": "object",
+      "title": "Label segments with a static image covariate (GEE)"
+    },
+    "label_covariates": {
+      "additionalProperties": false,
+      "properties": {
+        "image_collection_id": {
+          "default": "MODIS/061/MYD13A1",
+          "title": "Image Collection Id",
+          "type": "string"
+        },
+        "image_stack": {
+          "default": 0,
+          "title": "Image Stack",
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "type": "object",
+      "title": "Label trajectory segments with NDVI (GEE temporal)"
     }
   },
   "$defs": {
@@ -150,6 +196,19 @@
         "name"
       ],
       "title": "EarthRangerConnection",
+      "type": "object"
+    },
+    "GoogleEarthEngineConnection": {
+      "properties": {
+        "name": {
+          "title": "Data Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "GoogleEarthEngineConnection",
       "type": "object"
     },
     "TimezoneInfo": {
@@ -316,13 +375,22 @@
         "timezone"
       ]
     },
+    "label_covariates": {
+      "ui:order": [
+        "image_collection_id",
+        "image_stack"
+      ]
+    },
     "ui:order": [
       "workflow_details",
       "er_client_name",
+      "gee_client_name",
       "time_range",
       "subject_obs",
       "groupers",
-      "subject_traj"
+      "subject_traj",
+      "label_static",
+      "label_covariates"
     ]
   },
   "additionalProperties": false

@@ -1,68 +1,59 @@
-# subject-trajectory-export
+# Covariate Labeling
 
-A wt-platform workflow that produces the **full trajectory dataset** for a subject
-group as a **downloadable file** (parquet + CSV), for use in external tools such as R.
+A workflow that labels a subject **trajectory** dataframe with **Google Earth Engine
+covariates**.
 
-It is a trimmed variant of the stock **Subject Tracking** workflow. It keeps the
-trajectory build, an NSD chart and lightweight per-subject summary tiles, and it
-**removes the home-range (ETD) calculation and all map rendering** — the parts that
-make large, multi-year runs slow or time out.
+It builds the trajectory from EarthRanger, joins Earth Engine covariates onto each
+trajectory segment by time and location, and exports the labeled table. It applies both
+covariate-labeling methods: a **static image** (elevation) and a **temporal image
+collection** (NDVI).
 
-## Why this exists
-
-The stock Subject Tracking workflow times out on big jobs (e.g. the whole ATE group
-across several years) because of the elliptical time-density (ETD) home-range step,
-and it produces a dashboard rather than a downloadable data file. This variant drops
-ETD so it runs fast at scale, and adds file export so the trajectory table can be
-pulled into R.
-
-## What it outputs
-
-- **`trajectories` (parquet)** — the full segment-level trajectory table, with geometry.
-  One row per movement segment, per subject.
-- **`trajectory_stats` (CSV)** — the same table without geometry, for R/Excel. Columns:
-  `subject_name, subject_subtype, subject_sex, segment_start, segment_end,
-  dist_meters` (step length), `timespan_seconds, speed_kmhr, nsd, extra__is_night`.
-- **Dashboard** — an NSD chart plus per-subject summary tiles (mean/max speed, number
-  of locations, night/day ratio, total distance, total time). No maps, no home range.
-
-## Key settings (in the run form)
-
-- **Subject group** and **time range** — the animals and period.
-- **Trajectory segment filter** — e.g. `max_speed_kmhr: 8`, `max_time_secs: 12000`.
-- **Grouping** — group by `subject_name` (and/or a monthly temporal grouper) as needed.
-
-To restrict to specific animals (the GUI filters by group, not by individual), create
-a subject group for them in EarthRanger and point the workflow at it.
-
-## How it was built
-
-`spec.yaml` was derived from the released `subject-tracking` spec
-(`ecoscope-platform` 2.16.1) by:
-
-1. Removing the entire **Time Density Map** (ETD) task group and its dashboard widget.
-2. Removing the two **ecomap** chains (trajectory speed map, night/day map), the speed
-   classification, and the base-map definitions.
-3. Re-pointing `split_subject_traj_groups` at `map_subject_sex` (the full trajectory
-   frame) now that the speed-classification step is gone.
-4. Adding three export tasks: `persist_df` (parquet) of the full trajectory frame,
-   `subset_columns` to select the movement metrics, and `persist_df` (CSV) of that.
-5. Trimming the dashboard to the summary tiles + NSD chart.
-
-Everything kept is reused verbatim from the released spec, so the retained wiring is
-known-good.
-
-## Repo contents
-
-This repo holds the **source** for the workflow. The runnable package is *generated*
-from `spec.yaml` by `wt-compiler` (see below) — it is not committed here.
+## Pipeline
 
 ```
-spec.yaml          the workflow definition (the thing you edit)
-metadata.yaml      name / category / description shown on the platform
-layout.json        dashboard tile arrangement
-test-cases.yaml    named configs used by CI / local test
-pixi.toml          brings in wt-compiler + defines the `compile` task   <- was missing
-Makefile           same compile step for a global wt-compiler install
-README.md · LICENSE
+EarthRanger pull -> relocations -> trajectory -> label: static image + temporal collection (GEE) -> export (parquet + CSV)
 ```
+
+The output is the trajectory table with the covariate column(s) appended:
+`trajectories.parquet` (with geometry) and `trajectory_stats.csv` (tabular, for downstream
+applications). Each segment gains an `elevation` column (static) and an `NDVI` column
+(temporal).
+
+## Run form
+
+- **Static image ID** — the Earth Engine image asset path sampled for the static covariate.
+  Default `USGS/SRTMGL1_003` (SRTM elevation). Editable.
+- **Image collection ID** — the Earth Engine ImageCollection asset path sampled for the
+  temporal covariate. Default `MODIS/061/MYD13A1`. Editable.
+- **Image stack** — how many extra images to include on **each side** of the temporally
+  closest image. `0` (default) = only the single closest image, i.e. one covariate value per
+  segment. `2` = the 2 images before + the closest + the 2 after, which returns several rows
+  per segment.
+
+All three are Earth Engine **asset paths**, not band names (a common mistake: entering
+`NDVI` as the collection fails, because `NDVI` is a band, not a collection).
+
+## Which band gets sampled
+
+A collection or image usually has **many bands** (MYD13A1, for example, has `NDVI`, `EVI`,
+quality layers, reflectance bands). Leaving the band unset samples them all — a column each.
+To keep the output clean the workflow pins the band per labeler: `elevation` for the static
+image, `NDVI` for the temporal collection. To sample a different band (or change the reducer
+or scale), edit the pinned `bands` / `reducer` for that step in `spec.yaml`.
+
+## Notes on the output
+
+- **Raw MODIS scaling.** MODIS NDVI is stored as an integer scaled by `0.0001` (e.g. `1792`
+  = `0.1792`). Multiply by `0.0001` downstream to get true NDVI.
+- **Nulls.** A segment is null for a covariate when it has no data at that location/time —
+  NDVI where no image falls close enough in time to the segment, or elevation where a segment
+  crosses water. Widening the image stack fills more temporal gaps.
+
+## The two methods (tasks)
+
+Two registered tasks implement the two covariate-labeling methods, both wrapping Ecoscope's
+Earth Engine helpers via `chunk_gdf` (batched to stay within Earth Engine limits):
+
+- `label_with_static_image` — samples a single GEE image (Method 1). Sampled per segment so
+  segments over no-data come back as null rather than dropped.
+- `label_with_temporal_image_collection` — samples a time-matched image collection (Method 2).
