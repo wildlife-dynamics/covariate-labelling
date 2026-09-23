@@ -1,4 +1,4 @@
-# Covariate Labeling
+# Covariate Labelling
 
 A workflow that labels a subject **trajectory** dataframe with **Google Earth Engine
 covariates**.
