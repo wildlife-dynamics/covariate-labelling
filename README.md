@@ -30,9 +30,6 @@ applications). Each segment gains an `elevation` column (static) and an `NDVI` c
   segment. `2` = the 2 images before + the closest + the 2 after, which returns several rows
   per segment.
 
-All three are Earth Engine **asset paths**, not band names (a common mistake: entering
-`NDVI` as the collection fails, because `NDVI` is a band, not a collection).
-
 ## Which band gets sampled
 
 A collection or image usually has **many bands** (MYD13A1, for example, has `NDVI`, `EVI`,
@@ -49,11 +46,11 @@ or scale), edit the pinned `bands` / `reducer` for that step in `spec.yaml`.
   NDVI where no image falls close enough in time to the segment, or elevation where a segment
   crosses water. Widening the image stack fills more temporal gaps.
 
-## The two methods (tasks)
+## The two methods
 
 Two registered tasks implement the two covariate-labeling methods, both wrapping Ecoscope's
 Earth Engine helpers via `chunk_gdf` (batched to stay within Earth Engine limits):
 
 - `label_with_static_image` — samples a single GEE image (Method 1). Sampled per segment so
   segments over no-data come back as null rather than dropped.
-- `label_with_temporal_image_collection` — samples a time-matched image collection (Method 2).
+- `label_with_temporal_image_collection` — samples a time-matched image collection.
