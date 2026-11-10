@@ -60,6 +60,22 @@ def _build_reducer(name: str):
     return getattr(ee.Reducer, name)()
 
 
+def _apply_scale(series, scale_factor):
+    """Multiply sampled values by ``scale_factor``, element-wise for list cells."""
+    if scale_factor == 1.0:
+        return series
+
+    def _scale(v):
+        if isinstance(v, (list, tuple)):
+            return [_scale(x) for x in v]
+        try:
+            return v * scale_factor
+        except TypeError:
+            return v
+
+    return series.map(_scale)
+
+
 def _label_gdf_with_img_robust(gdf, img, region_reducer, scale=500.0, buffer_m=0.0):
     """Sample a static image per feature, keeping EVERY input row.
 
@@ -180,23 +196,34 @@ def _label_temporal_by_feature_robust(
         ignore_index=False,
         axis=1,
     )
-    # Collapse the image stack (n_before + nearest + n_after) to one row per segment.
+    # Collapse the image stack (n_before + nearest + n_after) to one row per
+    # segment. With a stack, 'img_date' becomes the list of all dates involved;
+    # the value becomes a list when stack_reducer == 'list' or the per-image value
+    # is itself a pixel list (a 'toList' region reducer). Scalar stack reducers
+    # (mean/median/min/max) collapse scalar per-image values to one number.
     if n_before or n_after:
-        import numpy as np
-
         val_cols = [c for c in result.columns if c != "img_date"]
-        for c in val_cols:
-            result[c] = pd.to_numeric(result[c], errors="coerce")
-        img_dt = pd.to_datetime(result["img_date"], utc=True, errors="coerce")
-        target = pd.to_datetime(gdf[time_col_name], utc=True, errors="coerce").reindex(
-            result.index
-        )
-        result["_absdt"] = np.abs(img_dt.values - target.values)
-        reduced = result.groupby(level=0).agg({c: stack_reducer for c in val_cols})
-        reduced["img_date"] = (
-            result.sort_values("_absdt").groupby(level=0)["img_date"].first()
-        )
-        result = reduced
+        # chronological order within each segment so value/date lists align
+        result = result.assign(
+            _dt=pd.to_datetime(result["img_date"], utc=True, errors="coerce")
+        ).sort_values("_dt")
+
+        def _vals(s):
+            vals = list(s)
+            if stack_reducer == "list" or any(
+                isinstance(v, (list, tuple)) for v in vals
+            ):
+                return vals
+            nums = pd.to_numeric(pd.Series(vals), errors="coerce")
+            return getattr(nums, stack_reducer)()
+
+        def _row(g):
+            out = {"img_date": list(g["img_date"])}
+            for c in val_cols:
+                out[c] = _vals(g[c])
+            return pd.Series(out)
+
+        result = result.groupby(level=0, sort=False).apply(_row)
     return result
 
 
@@ -296,11 +323,13 @@ class ImageCollectionCovariate(BaseModel):
         ),
     ] = 0
     stack_reducer: Annotated[
-        Literal["mean", "median", "min", "max"],
+        Literal["mean", "median", "min", "max", "list"],
         Field(
             description=(
-                "How to combine a multi-image stack (image_stack > 0) into one value per "
-                "segment, ignoring masked/no-data images. Ignored when image_stack = 0."
+                "How to combine a multi-image stack (image_stack > 0): 'mean'/'median'/'min'/"
+                "'max' return one value per segment (ignoring masked images); 'list' returns the "
+                "full list of per-image values. With a stack, '<name>_img_date' always holds the "
+                "list of dates involved. Ignored when image_stack = 0."
             )
         ),
     ] = "mean"
@@ -355,11 +384,18 @@ def _extract_temporal(labels, band: str):
 
     idx = labels.index
     if band in labels.columns:
-        value = pd.to_numeric(labels[band], errors="coerce")
+        value = labels[band]  # scalar, or a list (toList / stacked) -- leave as-is
     else:
         value = pd.Series(np.nan, index=idx)
+
+    def _coerce_date(v):
+        # a stacked covariate returns a LIST of dates; a single image a scalar
+        if isinstance(v, (list, tuple)):
+            return v
+        return pd.to_datetime(v, utc=True, errors="coerce")
+
     if "img_date" in labels.columns:
-        date = pd.to_datetime(labels["img_date"], errors="coerce", utc=True)
+        date = labels["img_date"].map(_coerce_date)
     else:
         date = pd.Series(pd.NaT, index=idx)
     return value, date
@@ -417,9 +453,7 @@ def label_with_covariates(
                 continue
             import pandas as pd
 
-            value = pd.to_numeric(labels.iloc[:, 0], errors="coerce")
-            if cov.scale_factor != 1.0:
-                value = value * cov.scale_factor
+            value = _apply_scale(labels.iloc[:, 0], cov.scale_factor)
             out = out.join(value.rename(cov.name))
         else:
             coll = ee.ImageCollection(cov.image_collection_id).select([cov.band])
@@ -442,8 +476,7 @@ def label_with_covariates(
             if labels is None:
                 continue
             value, date = _extract_temporal(labels, cov.band)
-            if cov.scale_factor != 1.0:
-                value = value * cov.scale_factor
+            value = _apply_scale(value, cov.scale_factor)
             out = out.join(value.rename(cov.name))
             out = out.join(date.rename(f"{cov.name}_img_date"))
     return out
@@ -671,12 +704,12 @@ def export_labeled_table(
         str,
         Field(description="Directory to write to (the workflow results directory)."),
     ] = "",
-) -> AnyGeoDataFrame:
+) -> list[str]:
     """Write the labeled table as CSV and/or Parquet, then pass the frame through.
 
     Parquet keeps the geometry; CSV drops it for a clean tabular file. Both keep
     the segment ``id`` (the frame's named index) as a column. ``none``
-    writes nothing. Returns ``df`` unchanged so it can still feed other widgets.
+    writes nothing. Returns the list of written file paths (surfaced in the download tab).
 
     Writes go through Ecoscope's own persist helpers (serialize to a buffer, then
     write) so the ``file://`` results-dir URI and cloud paths are handled the same
@@ -692,6 +725,7 @@ def export_labeled_table(
     # BOTH files, so CSV and Parquet carry the same columns and can be joined.
     table = df.reset_index() if df.index.name is not None else df
 
+    written: list[str] = []
     if export_format in ("parquet", "both"):
         buffer = io.BytesIO()
         has_geom = any(
@@ -701,13 +735,17 @@ def export_labeled_table(
             gpd.GeoDataFrame(table).to_parquet(buffer, index=False)
         else:
             table.to_parquet(buffer, index=False)
-        _persist_bytes(buffer.getvalue(), root_path, f"{filename}.parquet")
+        written.append(
+            _persist_bytes(buffer.getvalue(), root_path, f"{filename}.parquet")
+        )
     if export_format in ("csv", "both"):
         tabular = table.drop(columns=[c for c in ["geometry"] if c in table.columns])
         csv_buffer = io.StringIO()
         tabular.to_csv(csv_buffer, index=False)
-        _persist_text(csv_buffer.getvalue(), root_path, f"{filename}.csv")
-    return df
+        written.append(
+            _persist_text(csv_buffer.getvalue(), root_path, f"{filename}.csv")
+        )
+    return written
 
 
 # ---------------------------------------------------------------------------
