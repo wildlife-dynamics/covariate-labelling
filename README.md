@@ -55,7 +55,8 @@ type:
   - *image ID* — the GEE asset path (e.g. `USGS/SRTMGL1_003`).
   - *band* — the band to sample (e.g. `elevation`).
   - *Spatial Reducer* — how the pixels under each (buffered) segment are combined into
-    one value (default `mean`).
+    one value (default `mean`). Choose `toList` to return the list of individual pixel
+    values under the segment instead of a single number.
   - *scale* — sampling scale in metres (SRTM is 30 m).
   - *buffer* — metres to buffer each segment before sampling (see *Null values*).
   - *scale factor* — multiply the sampled value by a constant (default `1.0`).
@@ -67,8 +68,10 @@ type:
     uses only the single closest image; `N` uses the closest image plus the `N` before and
     `N` after it (2N+1 images). Raise it to smooth noise or fill gaps where the closest
     image is cloud-masked.
-  - *stack reducer* — how to combine a multi-image stack (`mean`, `median`, `min`, `max`;
-    default `mean`), ignoring masked images. Ignored when *image stack* is `0`.
+  - *stack reducer* — how to combine a multi-image stack (`mean`, `median`, `min`, `max`,
+    `list`; default `mean`), ignoring masked images. `list` keeps every image's value
+    instead of collapsing them, so the covariate column holds the list of values that went
+    into the reduction. Ignored when *image stack* is `0`.
   - *scale factor* — defaults to `1.0` (raw values). Set it to your product's scale,
     e.g. `0.0001` for MODIS NDVI/EVI (see *Notes*).
 
@@ -76,7 +79,10 @@ type:
   fails, because `NDVI` is a band, not a collection.
 
 Each covariate adds one column named by its *name*; an Image Collection also adds
-`<name>_img_date` (the date of the matched image).
+`<name>_img_date` (the date of the matched image). When a covariate reduces across an
+image stack, `<name>_img_date` holds the **list** of dates that went into the reduction
+(one per image); the value column stays a single number unless you pick the `list` stack
+reducer or a `toList` Spatial Reducer, in which case it holds the matching list of values.
 
 **Export** — `both` (default), `csv`, `parquet`, or `none`. Parquet keeps the geometry;
 CSV is a clean tabular file. Both carry all the covariate columns.
@@ -105,7 +111,8 @@ subjects.
 
 ## Output files
 
-Written to the workflow results directory:
+The CSV / Parquet exports appear in the **Files** download tab of the results view, and
+all outputs are written to the workflow results directory:
 
 - `trajectory_covariates.parquet` — the full labelled table, with geometry.
 - `trajectory_covariates.csv` — the same table, tabular (geometry dropped).
@@ -128,4 +135,8 @@ Written to the workflow results directory:
 - **Image stack.** By default an Image-Collection covariate samples the single closest-in-time
   image (one value and one `img_date` per segment). Set *image stack* to `N` > 0 to combine
   the 2N+1 nearest images with the *stack reducer* — handy to reduce noise or fill
-  cloud-masked gaps; `img_date` then reports the closest image's date.
+  cloud-masked gaps. With a stack, `img_date` becomes the **list** of dates involved; the
+  value stays a single statistic unless the stack reducer is `list` (or the Spatial Reducer
+  is `toList`), which keep the individual values as a list.
+- **List outputs in the files.** Parquet stores list-valued cells as real arrays; the CSV
+  writes them as text (e.g. `[0.21, 0.23, 0.20]`). Single-valued covariates are unaffected.
