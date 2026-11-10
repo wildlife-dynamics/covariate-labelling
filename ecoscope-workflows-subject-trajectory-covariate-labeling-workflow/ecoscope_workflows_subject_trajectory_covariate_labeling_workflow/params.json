@@ -25,8 +25,8 @@
       "properties": {
         "data_source": {
           "$ref": "#/$defs/EarthRangerConnection",
-          "title": "",
-          "description": "Select one of your configured data sources."
+          "description": "Select one of your configured data sources.",
+          "title": ""
         }
       },
       "required": [
@@ -40,8 +40,8 @@
       "properties": {
         "data_source": {
           "$ref": "#/$defs/GoogleEarthEngineConnection",
-          "title": "",
-          "description": "Select one of your configured data sources."
+          "description": "Select one of your configured data sources.",
+          "title": ""
         }
       },
       "required": [
@@ -54,23 +54,19 @@
       "additionalProperties": false,
       "properties": {
         "since": {
+          "description": "The start time",
           "format": "date-time",
           "title": "Since",
-          "type": "string",
-          "description": "The start time"
+          "type": "string"
         },
         "until": {
+          "description": "The end time",
           "format": "date-time",
           "title": "Until",
-          "type": "string",
-          "description": "The end time"
+          "type": "string"
         },
         "timezone": {
-          "allOf": [
-            {
-              "$ref": "#/$defs/TimezoneInfo"
-            }
-          ],
+          "$ref": "#/$defs/TimezoneInfo",
           "default": null,
           "title": "Timezone"
         }
@@ -87,9 +83,16 @@
       "additionalProperties": false,
       "properties": {
         "subject_group_name": {
+          "description": "\u26a0\ufe0f The use of a group with mixed subtypes could lead to unexpected results",
           "title": "Subject Group Name",
-          "type": "string",
-          "description": "\u26a0\ufe0f The use of a group with mixed subtypes could lead to unexpected results"
+          "type": "string"
+        },
+        "include_subject_additional": {
+          "default": false,
+          "description": "Whether or not to include the subject's free-form `additional` JSON",
+          "ecoscope:advanced": true,
+          "title": "Include Subject Additional",
+          "type": "boolean"
         }
       },
       "required": [
@@ -103,6 +106,7 @@
       "properties": {
         "groupers": {
           "default": null,
+          "description": "            Specify how the data should be grouped to create the views for your dashboard.\n            This field is optional; if left blank, all the data will appear in a single view.\n            ",
           "items": {
             "anyOf": [
               {
@@ -118,8 +122,7 @@
             "title": "Group by"
           },
           "title": " ",
-          "type": "array",
-          "description": "            Specify how the data should be grouped to create the views for your dashboard.\n            This field is optional; if left blank, all the data will appear in a single view.\n            "
+          "type": "array"
         }
       },
       "type": "object",
@@ -130,11 +133,7 @@
       "additionalProperties": false,
       "properties": {
         "trajectory_segment_filter": {
-          "allOf": [
-            {
-              "$ref": "#/$defs/TrajectorySegmentFilter"
-            }
-          ],
+          "$ref": "#/$defs/TrajectorySegmentFilter",
           "default": {
             "min_length_meters": 0.001,
             "max_length_meters": 100000,
@@ -143,9 +142,9 @@
             "min_speed_kmhr": 0.01,
             "max_speed_kmhr": 500
           },
-          "title": " ",
           "description": "Filter track data by setting limits on track segment length, duration, and speed. Segments outside these bounds are removed, reducing noise and to focus on meaningful movement patterns.",
-          "ecoscope:advanced": true
+          "ecoscope:advanced": true,
+          "title": " "
         }
       },
       "required": [],
@@ -157,6 +156,7 @@
       "properties": {
         "covariates": {
           "default": [],
+          "description": "One entry per covariate to attach. Choose 'Image' for a single image (e.g. elevation) or 'Image Collection' for a time-matched covariate (e.g. NDVI); add as many as you need.",
           "items": {
             "anyOf": [
               {
@@ -180,6 +180,7 @@
       "properties": {
         "export_format": {
           "default": "both",
+          "description": "Which file(s) to write with all covariate labels. 'both' (default) writes CSV + Parquet; 'none' skips export.",
           "enum": [
             "both",
             "csv",
@@ -406,12 +407,13 @@
         },
         "stack_reducer": {
           "default": "mean",
-          "description": "How to combine a multi-image stack (image_stack > 0) into one value per segment, ignoring masked/no-data images. Ignored when image_stack = 0.",
+          "description": "How to combine a multi-image stack (image_stack > 0): 'mean'/'median'/'min'/'max' return one value per segment (ignoring masked images); 'list' returns the full list of per-image values. With a stack, '<name>_img_date' always holds the list of dates involved. Ignored when image_stack = 0.",
           "enum": [
             "mean",
             "median",
             "min",
-            "max"
+            "max",
+            "list"
           ],
           "title": "Stack Reducer",
           "type": "string"
@@ -511,6 +513,12 @@
         "since",
         "until",
         "timezone"
+      ]
+    },
+    "subject_obs": {
+      "ui:order": [
+        "subject_group_name",
+        "include_subject_additional"
       ]
     },
     "ui:order": [

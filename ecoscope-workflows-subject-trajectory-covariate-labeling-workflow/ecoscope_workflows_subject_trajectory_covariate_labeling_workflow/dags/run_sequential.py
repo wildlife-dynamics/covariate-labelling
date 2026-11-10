@@ -25,9 +25,13 @@ from ecoscope.platform.tasks.preprocessing import (
     relocations_to_trajectory as relocations_to_trajectory,
 )
 from ecoscope.platform.tasks.results import (
+    create_files_single_view as create_files_single_view,
+)
+from ecoscope.platform.tasks.results import (
     create_plot_widget_single_view as create_plot_widget_single_view,
 )
 from ecoscope.platform.tasks.results import gather_dashboard as gather_dashboard
+from ecoscope.platform.tasks.results import merge_file_views as merge_file_views
 from ecoscope.platform.tasks.results import merge_widget_views as merge_widget_views
 from ecoscope.platform.tasks.skip import (
     any_dependency_skipped as any_dependency_skipped,
@@ -415,6 +419,7 @@ def main(params: dict[str, Any], validate_params_schema: bool = True):
                 "extra__sex": "subject_sex",
             },
             raise_if_not_found=True,
+            duplicate_strategy="suffix",
             **(params.get("rename_grouper_columns") or {}),
         )
         .call()
@@ -490,6 +495,7 @@ def main(params: dict[str, Any], validate_params_schema: bool = True):
             retain_columns=[],
             rename_columns={},
             raise_if_not_found=False,
+            duplicate_strategy="suffix",
             **(params.get("clean_traj") or {}),
         )
         .call()
@@ -514,6 +520,38 @@ def main(params: dict[str, Any], validate_params_schema: bool = True):
             root_path=os.environ["ECOSCOPE_WORKFLOWS_RESULTS"],
             **(params.get("export_table") or {}),
         )
+        .call()
+    )
+
+    files_export_view = (
+        task(create_files_single_view)
+        .validate()
+        .set_task_instance_id("files_export_view")
+        .handle_errors()
+        .with_tracing()
+        .skipif(
+            conditions=[
+                never,
+            ],
+            unpack_depth=1,
+        )
+        .partial(files=export_table, **(params.get("files_export_view") or {}))
+        .call()
+    )
+
+    files_merged = (
+        task(merge_file_views)
+        .validate()
+        .set_task_instance_id("files_merged")
+        .handle_errors()
+        .with_tracing()
+        .skipif(
+            conditions=[
+                never,
+            ],
+            unpack_depth=1,
+        )
+        .partial(files=[files_export_view], **(params.get("files_merged") or {}))
         .call()
     )
 
@@ -637,6 +675,7 @@ def main(params: dict[str, Any], validate_params_schema: bool = True):
             widgets=[widget_covariate_plot],
             groupers=resolved_groupers,
             time_range=time_range,
+            files=files_merged,
             **(params.get("covariate_dashboard") or {}),
         )
         .call()
